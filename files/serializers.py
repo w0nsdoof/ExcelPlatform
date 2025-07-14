@@ -1,14 +1,16 @@
 from rest_framework import serializers
-from .models import UploadedFile, ParsedData
+from .models import UserFile
 
-class UploadedFileSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = UploadedFile
-        fields = ['id', 'user', 'file', 'uploaded_at', 'original_name', 'parsed']
-        read_only_fields = ['id', 'user', 'uploaded_at', 'parsed', 'original_name']
+class UserFileSerializer(serializers.ModelSerializer):
+    file_name = serializers.SerializerMethodField()
+    file_size = serializers.SerializerMethodField()
 
-class ParsedDataSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ParsedData
-        fields = ['id', 'file', 'row_data']
-        read_only_fields = ['id', 'file', 'row_data'] 
+        model = UserFile
+        fields = ['id', 'file', 'uploaded_at', 'file_name', 'file_size']
+
+    def get_file_name(self, obj):
+        return obj.file.name.split('/')[-1] if obj.file else None
+
+    def get_file_size(self, obj):
+        return obj.file.size if obj.file else None

@@ -1,10 +1,10 @@
-from django.urls import path
-from .views import UploadFileView, FileListView, FileDetailView, DownloadFileView, ParseFileView
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import UserFileViewSet
+
+router = DefaultRouter()
+router.register(r'files', UserFileViewSet, basename='files')
 
 urlpatterns = [
-    path('upload/', UploadFileView.as_view(), name='file-upload'),
-    path('list/', FileListView.as_view(), name='file-list'),
-    path('<int:pk>/', FileDetailView.as_view(), name='file-detail'),
-    path('<int:pk>/download/', DownloadFileView.as_view(), name='file-download'),
-    path('<int:pk>/parse/', ParseFileView.as_view(), name='file-parse'),
-] 
+    path('api/', include(router.urls)),
+]
