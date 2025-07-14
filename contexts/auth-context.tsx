@@ -10,6 +10,7 @@ interface AuthContextType {
   isAuthenticated: boolean
   login: (credentials: LoginRequest) => Promise<void>
   logout: () => void
+  refreshAccessToken: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -73,6 +74,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null)
   }
 
+  const handleRefreshAccessToken = async (): Promise<void> => {
+    if (!refreshTokenValue) {
+      handleLogout()
+      throw new Error("No refresh token available")
+    }
+
+    try {
+      const response = await refreshToken(refreshTokenValue)
+      localStorage.setItem(ACCESS_TOKEN_KEY, response.access)
+      setAccessToken(response.access)
+      // No return value
+    } catch (error) {
+      handleLogout()
+      throw error
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -82,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated,
         login: handleLogin,
         logout: handleLogout,
+        refreshAccessToken: handleRefreshAccessToken,
       }}
     >
       {children}

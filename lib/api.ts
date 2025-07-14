@@ -15,7 +15,7 @@ async function makeAuthenticatedRequest(
   url: string,
   options: RequestInit,
   accessToken: string,
-  _refreshAccessToken: () => Promise<void>, // keep signature for compatibility
+  refreshAccessToken: () => Promise<void>,
 ): Promise<Response> {
   const makeRequest = async (token: string) => {
     return fetch(url, {
@@ -29,15 +29,54 @@ async function makeAuthenticatedRequest(
 
   let response = await makeRequest(accessToken)
 
-  // If token expired, do NOT try to refresh, just throw
   if (response.status === 401) {
-    throw new Error("Authentication failed")
+    // Try to parse the error response for token_not_valid and Token is expired
+    let shouldTryRefresh = false
+    try {
+      const data = await response.clone().json()
+      if (
+        data?.code === "token_not_valid" &&
+        Array.isArray(data?.messages) &&
+        data.messages.some(
+          (msg: any) =>
+            msg.token_class === "AccessToken" &&
+            msg.token_type === "access" &&
+            msg.message && msg.message.toLowerCase().includes("expired")
+        )
+      ) {
+        shouldTryRefresh = true
+      }
+    } catch (e) {
+      // If parsing fails, do not try refresh
+    }
+
+    if (shouldTryRefresh) {
+      try {
+        await refreshAccessToken()
+        const newToken = localStorage.getItem("access_token")
+        if (newToken) {
+          response = await makeRequest(newToken)
+          if (response.status === 401) {
+            throw new Error("Authentication failed after refresh")
+          }
+        } else {
+          throw new Error("No new access token after refresh")
+        }
+      } catch (error) {
+        throw new Error("Authentication failed")
+      }
+    } else {
+      throw new Error("Authentication failed")
+    }
   }
 
   return response
 }
 
-export async function fetchFiles(accessToken: string): Promise<FileItem[]> {
+export async function fetchFiles(
+  accessToken: string,
+  refreshAccessToken: () => Promise<void>
+): Promise<FileItem[]> {
   const host = getApiHost()
 
   const response = await makeAuthenticatedRequest(
@@ -49,7 +88,7 @@ export async function fetchFiles(accessToken: string): Promise<FileItem[]> {
       },
     },
     accessToken,
-    async () => {}, // No refresh needed
+    refreshAccessToken
   )
 
   if (!response.ok) {
@@ -62,6 +101,7 @@ export async function fetchFiles(accessToken: string): Promise<FileItem[]> {
 export async function uploadFile(
   file: File,
   accessToken: string,
+  refreshAccessToken: () => Promise<void>
 ): Promise<FileItem> {
   const host = getApiHost()
 
@@ -75,7 +115,7 @@ export async function uploadFile(
       body: formData,
     },
     accessToken,
-    async () => {}, // No refresh needed
+    refreshAccessToken
   )
 
   if (!response.ok) {
@@ -88,6 +128,7 @@ export async function uploadFile(
 export async function deleteFile(
   fileId: number,
   accessToken: string,
+  refreshAccessToken: () => Promise<void>
 ): Promise<void> {
   const host = getApiHost()
 
@@ -97,7 +138,7 @@ export async function deleteFile(
       method: "DELETE",
     },
     accessToken,
-    async () => {}, // No refresh needed
+    refreshAccessToken
   )
 
   if (!response.ok) {
@@ -108,6 +149,7 @@ export async function deleteFile(
 export async function getFileInfo(
   fileId: number,
   accessToken: string,
+  refreshAccessToken: () => Promise<void>
 ): Promise<FileItem> {
   const host = getApiHost()
 
@@ -120,7 +162,7 @@ export async function getFileInfo(
       },
     },
     accessToken,
-    async () => {}, // No refresh needed
+    refreshAccessToken
   )
 
   if (!response.ok) {
