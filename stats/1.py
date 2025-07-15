@@ -26,8 +26,16 @@ def parse_nct_blocks_correct_header(file_path):
             while j < len(rows):
                 header_row = rows[j]
                 if header_row and "Код группы ОП" in [str(c).strip() if c else "" for c in header_row]:
-                    categories = [c for c in header_row]
-                    j += 1
+                    # Now, look for the next non-empty row (the ab-categories row)
+                    k = j + 1
+                    while k < len(rows) and not any(rows[k]):
+                        k += 1
+                    if k < len(rows):
+                        categories = [c for c in rows[k]]
+                        j = k + 1
+                    else:
+                        categories = [c for c in header_row]
+                        j += 1
                     break
                 j += 1
             # Now j is at the first data row
