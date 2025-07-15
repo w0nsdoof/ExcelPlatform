@@ -37,6 +37,7 @@ export const translations = {
     loginErrorGeneric: "Login failed: An unexpected error occurred.",
     uploadError401: "Upload failed: You are not authorized. Please log in again.",
     uploadErrorGeneric: "Upload failed: An unexpected error occurred.",
+    viewReport: "View Report",
   },
   ru: {
     username: "Имя пользователя",
@@ -76,6 +77,7 @@ export const translations = {
     loginErrorGeneric: "Ошибка входа: произошла непредвиденная ошибка.",
     uploadError401: "Ошибка загрузки: вы не авторизованы. Пожалуйста, войдите снова.",
     uploadErrorGeneric: "Ошибка загрузки: произошла непредвиденная ошибка.",
+    viewReport: "Посмотреть отчет",
   },
   kz: {
     username: "Пайдаланушы аты",
@@ -115,6 +117,7 @@ export const translations = {
     loginErrorGeneric: "Кіру сәтсіз аяқталды: күтпеген қате орын алды.",
     uploadError401: "Жүктеу сәтсіз аяқталды: сізге рұқсат жоқ. Қайта кіріңіз.",
     uploadErrorGeneric: "Жүктеу сәтсіз аяқталды: күтпеген қате орын алды.",
+    viewReport: "Есепті көру",
   },
 }
 

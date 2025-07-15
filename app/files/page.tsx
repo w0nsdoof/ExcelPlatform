@@ -6,6 +6,12 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { useLanguage } from "@/contexts/language-context"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { fetchFiles, deleteFile, type FileItem } from "@/lib/api"
@@ -21,6 +27,9 @@ export default function FilesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
+  const [reportData, setReportData] = useState<Record<string, number> | null>(null)
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false)
+  const [loadingReport, setLoadingReport] = useState(false)
 
   const { accessToken, refreshAccessToken } = useAuth()
 
@@ -69,6 +78,31 @@ export default function FilesPage() {
       alert(t("deleteError"))
     } finally {
       setDeletingId(null)
+    }
+  }
+
+  const handleViewReport = async (reportUrl: string) => {
+    if (!reportUrl) return
+    setIsReportModalOpen(true)
+    setLoadingReport(true)
+    setReportData(null)
+
+    try {
+      const response = await fetch(reportUrl)
+      if (response.ok) {
+        const data = await response.json()
+        if (data && data.specialization_counts) {
+          setReportData(data.specialization_counts)
+        } else {
+          setReportData(null)
+        }
+      } else {
+        setReportData(null)
+      }
+    } catch (error) {
+      setReportData(null)
+    } finally {
+      setLoadingReport(false)
     }
   }
 
@@ -167,6 +201,17 @@ export default function FilesPage() {
                           <TableCell>{formatDate(file.uploaded_at, language)}</TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center gap-2 justify-end">
+                              {file.report_url && (
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="flex items-center gap-1"
+                                  onClick={() => handleViewReport(file.report_url!)}
+                                >
+                                  <FileText className="w-4 h-4" />
+                                  {t("viewReport")}
+                                </Button>
+                              )}
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -201,6 +246,43 @@ export default function FilesPage() {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>{t("viewReport")}</DialogTitle>
+            </DialogHeader>
+            {loadingReport ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                <span>{t("loading")}</span>
+              </div>
+            ) : reportData ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Specialization</TableHead>
+                      <TableHead className="text-right">Count</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {Object.entries(reportData).map(([spec, count]) => (
+                      <TableRow key={spec}>
+                        <TableCell>{spec}</TableCell>
+                        <TableCell className="text-right">{count}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <p>{t("error")}</p>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </ProtectedRoute>
   )

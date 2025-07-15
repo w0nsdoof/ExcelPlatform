@@ -4,6 +4,7 @@ export interface FileItem {
   uploaded_at: string
   file_name: string
   file_size: number
+  report_url?: string | null
 }
 
 const getApiHost = () => {
