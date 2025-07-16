@@ -68,6 +68,22 @@ def generate_custom_report(blocks):
     quota_counts = {cat: 0 for cat in ab_categories}
     specialization_counts = {}
     prim_counts = {}  # For Примечание values
+    
+    # Metadata tracking
+    from datetime import datetime
+    start_time = datetime.now()
+    
+    metadata = {
+        "total_rows_processed": 0,
+        "rows_with_quotas": 0,
+        "rows_with_specializations": 0,
+        "rows_with_prim": 0,
+        "blocks_processed": len(blocks),
+        "processing_start": start_time.isoformat(),
+        "processing_end": None,
+        "processing_duration_seconds": None
+    }
+    
     for block in blocks:
         cats = block['categories']
         header_row = block.get('header_row', [])
@@ -79,20 +95,30 @@ def generate_custom_report(blocks):
         except ValueError:
             prim_idx = None
         for row in block['data']:
+            metadata["total_rows_processed"] += 1
+            
+            # Track quota rows
+            has_quota = False
             for cat, indices in ab_indices.items():
                 for idx in indices:
                     if idx < len(row) and row[idx] and str(row[idx]).strip() == "+":
                         quota_counts[cat] += 1
-            # Count Примечание values
+                        has_quota = True
+            if has_quota:
+                metadata["rows_with_quotas"] += 1
+            
+            # Track Примечание rows
             if prim_idx is not None and prim_idx < len(row):
                 val = row[prim_idx]
                 if isinstance(val, str) and val.strip():
+                    metadata["rows_with_prim"] += 1
                     for item in val.split(","):
                         item = item.strip()
                         if item:
                             prim_counts[item] = prim_counts.get(item, 0) + 1
-            # Look for specialization data in the row - it seems to be in a specific column
-            # Based on the sample data, it appears to be around index 30-31
+            
+            # Track specialization rows
+            has_specialization = False
             for idx, cell in enumerate(row):
                 if isinstance(cell, str) and " - " in cell and "\n" in cell:
                     # This looks like specialization data
@@ -105,13 +131,26 @@ def generate_custom_report(blocks):
                             univ = univ.strip()
                             if univ == "421":  # KBTU
                                 specialization_counts[spec] = specialization_counts.get(spec, 0) + 1
+                                has_specialization = True
                             break  # Only count the first choice
                     break  # Only process the first specialization cell found
+            if has_specialization:
+                metadata["rows_with_specializations"] += 1
+    
     if prim_counts:
         quota_counts["Примечание"] = prim_counts
+    
+    # Calculate processing duration
+    end_time = datetime.now()
+    duration = (end_time - start_time).total_seconds()
+    
+    metadata["processing_end"] = end_time.isoformat()
+    metadata["processing_duration_seconds"] = round(duration, 3)
+    
     return {
         "quota_counts": quota_counts,
-        "specialization_counts": specialization_counts
+        "specialization_counts": specialization_counts,
+        "metadata": metadata
     }
 
 def process_excel_file(file_path):
