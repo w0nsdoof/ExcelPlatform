@@ -3,6 +3,99 @@ import openpyxl
 import io
 import json
 from django.core.files.base import ContentFile
+from datetime import datetime, timedelta
+import hashlib
+
+class TimeHashProcessor:
+    def __init__(self, time_window_hours=3, max_hashes=10000):
+        """
+        Initialize the hash processor with time window and memory limits.
+        
+        Args:
+            time_window_hours (int): Hours to keep hashes in memory (default: 3)
+            max_hashes (int): Maximum number of hashes to store (default: 10000)
+        """
+        self.time_window = timedelta(hours=time_window_hours)
+        self.max_hashes = max_hashes
+        self.hash_timestamps = {}  # hash -> timestamp
+        self.last_cleanup = datetime.now()
+    
+    def create_row_hash(self, row, header_row=None):
+        """Create anonymous hash from personal data."""
+        # If header_row is provided, find indices
+        if header_row:
+            try:
+                iin_idx = header_row.index('ИИН')
+                fio_idx = header_row.index('ФИО')
+                cert_idx = header_row.index('№ сертификата')
+            except ValueError:
+                # If headers not found, use default positions
+                iin_idx, fio_idx, cert_idx = 6, 2, 11  # Based on sample data structure
+        else:
+            # Default positions based on sample data
+            iin_idx, fio_idx, cert_idx = 6, 2, 11
+        
+        # Extract values safely
+        iin = str(row[iin_idx] if iin_idx < len(row) else '')
+        fio = str(row[fio_idx] if fio_idx < len(row) else '')
+        cert = str(row[cert_idx] if cert_idx < len(row) else '')
+        
+        # Create hash
+        personal_data = f"{iin}{fio}{cert}"
+        return hashlib.sha256(personal_data.encode('utf-8')).hexdigest()
+    
+    def is_hash_recent(self, row_hash):
+        """Check if hash was seen recently within time window."""
+        if row_hash not in self.hash_timestamps:
+            return False
+        
+        last_seen = self.hash_timestamps[row_hash]
+        time_diff = datetime.now() - last_seen
+        return time_diff <= self.time_window
+    
+    def add_hash(self, row_hash):
+        """Add hash with current timestamp."""
+        current_time = datetime.now()
+        
+        # Check memory limit
+        if len(self.hash_timestamps) >= self.max_hashes:
+            self.cleanup_old_hashes()
+            
+            # If still at limit after cleanup, remove oldest entry
+            if len(self.hash_timestamps) >= self.max_hashes:
+                oldest_hash = min(self.hash_timestamps.keys(), 
+                                key=lambda h: self.hash_timestamps[h])
+                del self.hash_timestamps[oldest_hash]
+        
+        self.hash_timestamps[row_hash] = current_time
+    
+    def cleanup_old_hashes(self):
+        """Remove hashes older than time window."""
+        current_time = datetime.now()
+        cutoff_time = current_time - self.time_window
+        
+        # Remove old hashes
+        old_hashes = [
+            h for h, t in self.hash_timestamps.items() 
+            if t < cutoff_time
+        ]
+        for h in old_hashes:
+            del self.hash_timestamps[h]
+        
+        self.last_cleanup = current_time
+    
+    def get_stats(self):
+        """Get current statistics."""
+        return {
+            "total_hashes": len(self.hash_timestamps),
+            "max_hashes": self.max_hashes,
+            "time_window_hours": self.time_window.total_seconds() / 3600,
+            "last_cleanup": self.last_cleanup.isoformat(),
+            "memory_usage_mb": len(self.hash_timestamps) * 0.0001  # Rough estimate
+        }
+
+# Global processor instance
+hash_processor = TimeHashProcessor(time_window_hours=3, max_hashes=10000)
 
 def is_xlsx_file(file_path):
     return file_path.lower().endswith('.xlsx')
@@ -81,7 +174,12 @@ def generate_custom_report(blocks):
         "blocks_processed": len(blocks),
         "processing_start": start_time.isoformat(),
         "processing_end": None,
-        "processing_duration_seconds": None
+        "processing_duration_seconds": None,
+        "deduplication_stats": {
+            "duplicate_rows_skipped": 0,
+            "unique_rows_processed": 0,
+            "hash_processor_stats": None
+        }
     }
     
     for block in blocks:
@@ -96,6 +194,18 @@ def generate_custom_report(blocks):
             prim_idx = None
         for row in block['data']:
             metadata["total_rows_processed"] += 1
+            
+            # Create row hash for deduplication
+            row_hash = hash_processor.create_row_hash(row, header_row)
+            
+            # Check if this row is a duplicate
+            if hash_processor.is_hash_recent(row_hash):
+                metadata["deduplication_stats"]["duplicate_rows_skipped"] += 1
+                continue  # Skip this row
+            
+            # Process unique row
+            metadata["deduplication_stats"]["unique_rows_processed"] += 1
+            hash_processor.add_hash(row_hash)
             
             # Track quota rows
             has_quota = False
@@ -146,6 +256,9 @@ def generate_custom_report(blocks):
     
     metadata["processing_end"] = end_time.isoformat()
     metadata["processing_duration_seconds"] = round(duration, 3)
+    
+    # Add hash processor stats
+    metadata["deduplication_stats"]["hash_processor_stats"] = hash_processor.get_stats()
     
     return {
         "quota_counts": quota_counts,
