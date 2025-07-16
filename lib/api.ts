@@ -30,6 +30,7 @@ async function makeAuthenticatedRequest(
 
   let response = await makeRequest(accessToken)
 
+  // Only handle 401 errors for token refresh, let other status codes pass through
   if (response.status === 401) {
     // Try to parse the error response for token_not_valid and Token is expired
     let shouldTryRefresh = false
@@ -57,6 +58,7 @@ async function makeAuthenticatedRequest(
         const newToken = localStorage.getItem("access_token")
         if (newToken) {
           response = await makeRequest(newToken)
+          // If still 401 after refresh, throw error
           if (response.status === 401) {
             throw new Error("Authentication failed after refresh")
           }
@@ -67,7 +69,8 @@ async function makeAuthenticatedRequest(
         throw new Error("Authentication failed")
       }
     } else {
-      throw new Error("Authentication failed")
+      // If no refresh needed, throw 401 error
+      throw new Error("HTTP error! status: 401")
     }
   }
 
@@ -119,7 +122,37 @@ export async function uploadFile(
     refreshAccessToken
   )
 
+  console.log('Upload response status:', response.status) // Debug log
+
   if (!response.ok) {
+    console.log('Response not ok, status:', response.status) // Debug log
+    
+    // Handle specific 400 error for duplicate files
+    if (response.status === 400) {
+      let errorData
+      try {
+        errorData = await response.json()
+        console.log('400 error data:', errorData) // Debug log
+      } catch (parseError) {
+        console.log('Error parsing 400 response:', parseError) // Debug log
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      
+      if (errorData.error && errorData.error.includes("already been processed recently")) {
+        console.log('Detected duplicate file error') // Debug log
+        throw new Error("DUPLICATE_FILE")
+      } else {
+        console.log('400 error but not duplicate file') // Debug log
+        throw new Error(`HTTP error! status: ${response.status} - ${errorData.error || 'Unknown error'}`)
+      }
+    }
+    
+    // Handle 401 errors specifically
+    if (response.status === 401) {
+      throw new Error("HTTP error! status: 401")
+    }
+    
+    // Generic error for other status codes
     throw new Error(`HTTP error! status: ${response.status}`)
   }
 

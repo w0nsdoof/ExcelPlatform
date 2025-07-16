@@ -115,12 +115,10 @@ export default function UploadPage() {
         message: t("uploadSuccess"),
       })
       setUploadedFileName(file.name)
-
-      // Clear file input
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ""
-      }
     } catch (error: any) {
+      console.log('Upload error caught:', error) // Debug log
+      console.log('Error message:', error.message) // Debug log
+      
       if (error instanceof Error && error.message.includes("401")) {
         setUploadStatus({
           type: "error",
@@ -128,7 +126,16 @@ export default function UploadPage() {
         })
         setUploadedFileName(null)
         setUploadedFileInfo(null)
+      } else if (error instanceof Error && error.message === "DUPLICATE_FILE") {
+        console.log('Setting duplicate file error message') // Debug log
+        setUploadStatus({
+          type: "error",
+          message: t("uploadErrorDuplicate"),
+        })
+        setUploadedFileName(null)
+        setUploadedFileInfo(null)
       } else {
+        console.log('Setting generic error message') // Debug log
         setUploadStatus({
           type: "error",
           message: t("uploadErrorGeneric"),
@@ -138,6 +145,10 @@ export default function UploadPage() {
       }
     } finally {
       setUploading(false)
+      // Always reset file input after any upload attempt (success or failure)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ""
+      }
     }
   }
 
