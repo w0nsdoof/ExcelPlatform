@@ -25,6 +25,7 @@ import { useAuth } from "@/contexts/auth-context"
 interface ReportData {
   quota_counts: Record<string, number>
   specialization_counts: Record<string, number>
+  notes_counts: Record<string, number>
   metadata?: {
     total_rows_processed: number
     rows_with_quotas: number
@@ -42,8 +43,20 @@ export default function FilesPage() {
   const [reportData, setReportData] = useState<ReportData | null>(null)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
+  const [sortOrder, setSortOrder] = useState<'name' | 'count'>('count')
 
   const { accessToken, refreshAccessToken } = useAuth()
+
+  // Helper function to sort entries
+  const sortEntries = (entries: [string, number][]) => {
+    return entries.sort((a, b) => {
+      if (sortOrder === 'count') {
+        return b[1] - a[1] // Sort by count descending
+      } else {
+        return a[0].localeCompare(b[0]) // Sort by name ascending
+      }
+    })
+  }
 
   const loadFiles = async () => {
     try {
@@ -108,10 +121,21 @@ export default function FilesPage() {
         if (data && (data.quota_counts || data.specialization_counts)) {
           // Ensure quota_counts is a flat object with string keys and number values
           const quotaCounts: Record<string, number> = {}
+          const notesCounts: Record<string, number> = {}
+          
           if (data.quota_counts && typeof data.quota_counts === 'object') {
             Object.entries(data.quota_counts).forEach(([key, value]) => {
-              if (typeof key === 'string' && typeof value === 'number') {
-                quotaCounts[key] = value
+              if (typeof key === 'string') {
+                if (typeof value === 'number') {
+                  quotaCounts[key] = value
+                } else if (typeof value === 'object' && value !== null) {
+                  // Handle nested quota categories like "Примечание"
+                  Object.entries(value).forEach(([subKey, subValue]) => {
+                    if (typeof subKey === 'string' && typeof subValue === 'number') {
+                      notesCounts[subKey] = subValue
+                    }
+                  })
+                }
               }
             })
           }
@@ -129,6 +153,7 @@ export default function FilesPage() {
           setReportData({
             quota_counts: quotaCounts,
             specialization_counts: specializationCounts,
+            notes_counts: notesCounts,
             metadata: data.metadata
           })
         } else {
@@ -323,9 +348,30 @@ export default function FilesPage() {
                   </div>
                 )}
 
-                {/* Tabs for Quota and Specialization Counts */}
+                                {/* Sorting Controls */}
+                <div className="flex justify-end mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600">{t("sortByCount")}:</span>
+                    <Button
+                      variant={sortOrder === 'count' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSortOrder('count')}
+                    >
+                      {t("sortByCount")}
+                    </Button>
+                    <Button
+                      variant={sortOrder === 'name' ? 'default' : 'outline'}
+                      size="sm"
+                      onClick={() => setSortOrder('name')}
+                    >
+                      {t("sortByName")}
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Tabs for Quota, Specialization, and Notes Counts */}
                 <Tabs defaultValue="quotas" className="w-full">
-                  <TabsList className="grid w-full grid-cols-2">
+                  <TabsList className="grid w-full grid-cols-3">
                     <TabsTrigger value="quotas" className="flex items-center gap-2">
                       <Users className="w-4 h-4" />
                       {t("quotaCategories")}
@@ -333,6 +379,10 @@ export default function FilesPage() {
                     <TabsTrigger value="specializations" className="flex items-center gap-2">
                       <GraduationCap className="w-4 h-4" />
                       {t("specializations")}
+                    </TabsTrigger>
+                    <TabsTrigger value="notes" className="flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      {t("notes")}
                     </TabsTrigger>
                   </TabsList>
                   
@@ -347,12 +397,12 @@ export default function FilesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                                                       {Object.entries(reportData.quota_counts).map(([quota, count]) => (
-                             <TableRow key={String(quota)}>
-                               <TableCell className="font-medium">{String(quota)}</TableCell>
-                               <TableCell className="text-right">{Number(count)}</TableCell>
-                             </TableRow>
-                           ))}
+                            {sortEntries(Object.entries(reportData.quota_counts)).map(([quota, count]) => (
+                              <TableRow key={String(quota)}>
+                                <TableCell className="font-medium">{String(quota)}</TableCell>
+                                <TableCell className="text-right">{Number(count)}</TableCell>
+                              </TableRow>
+                            ))}
                           </TableBody>
                         </Table>
                       </div>
@@ -374,18 +424,45 @@ export default function FilesPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                                                       {Object.entries(reportData.specialization_counts).map(([spec, count]) => (
-                             <TableRow key={String(spec)}>
-                               <TableCell className="font-medium">{String(spec)}</TableCell>
-                               <TableCell className="text-right">{Number(count)}</TableCell>
-                             </TableRow>
-                           ))}
+                            {sortEntries(Object.entries(reportData.specialization_counts)).map(([spec, count]) => (
+                              <TableRow key={String(spec)}>
+                                <TableCell className="font-medium">{String(spec)}</TableCell>
+                                <TableCell className="text-right">{Number(count)}</TableCell>
+                              </TableRow>
+                            ))}
                           </TableBody>
                         </Table>
                       </div>
                     ) : (
                       <div className="text-center py-8 text-gray-500">
                         {t("noSpecializationData")}
+                      </div>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="notes" className="mt-4">
+                    {Object.keys(reportData.notes_counts).length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{t("noteCategory")}</TableHead>
+                              <TableHead className="text-right">{t("count")}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {sortEntries(Object.entries(reportData.notes_counts)).map(([note, count]) => (
+                              <TableRow key={String(note)}>
+                                <TableCell className="font-medium">{String(note)}</TableCell>
+                                <TableCell className="text-right">{Number(count)}</TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        {t("noNotesData")}
                       </div>
                     )}
                   </TabsContent>

@@ -20,6 +20,7 @@ import { useAuth } from "@/contexts/auth-context"
 interface ReportData {
   quota_counts: Record<string, number>
   specialization_counts: Record<string, number>
+  notes_counts: Record<string, number>
   metadata?: {
     total_rows_processed: number
     rows_with_quotas: number
@@ -39,6 +40,7 @@ export default function UploadPage() {
   const [uploadedFileName, setUploadedFileName] = useState<string | null>(null)
   const [uploadedFileInfo, setUploadedFileInfo] = useState<any | null>(null)
   const [reportData, setReportData] = useState<ReportData | null>(null)
+  const [sortOrder, setSortOrder] = useState<'name' | 'count'>('count')
   const fileInputRef = useRef<HTMLInputElement>(null)
   const { accessToken, refreshAccessToken } = useAuth()
 
@@ -54,10 +56,21 @@ export default function UploadPage() {
             if (data && (data.quota_counts || data.specialization_counts)) {
               // Ensure quota_counts is a flat object with string keys and number values
               const quotaCounts: Record<string, number> = {}
+              const notesCounts: Record<string, number> = {}
+              
               if (data.quota_counts && typeof data.quota_counts === 'object') {
                 Object.entries(data.quota_counts).forEach(([key, value]) => {
-                  if (typeof key === 'string' && typeof value === 'number') {
-                    quotaCounts[key] = value
+                  if (typeof key === 'string') {
+                    if (typeof value === 'number') {
+                      quotaCounts[key] = value
+                    } else if (typeof value === 'object' && value !== null) {
+                      // Handle nested quota categories like "Примечание"
+                      Object.entries(value).forEach(([subKey, subValue]) => {
+                        if (typeof subKey === 'string' && typeof subValue === 'number') {
+                          notesCounts[subKey] = subValue
+                        }
+                      })
+                    }
                   }
                 })
               }
@@ -75,6 +88,7 @@ export default function UploadPage() {
               setReportData({
                 quota_counts: quotaCounts,
                 specialization_counts: specializationCounts,
+                notes_counts: notesCounts,
                 metadata: data.metadata
               })
             }
@@ -86,6 +100,17 @@ export default function UploadPage() {
     }
     fetchReport()
   }, [uploadedFileInfo])
+
+  // Helper function to sort entries
+  const sortEntries = (entries: [string, number][]) => {
+    return entries.sort((a, b) => {
+      if (sortOrder === 'count') {
+        return b[1] - a[1] // Sort by count descending
+      } else {
+        return a[0].localeCompare(b[0]) // Sort by name ascending
+      }
+    })
+  }
 
   const handleFileSelect = async (files: FileList | null) => {
     if (!files || files.length === 0) return
@@ -224,9 +249,30 @@ export default function UploadPage() {
                  </div>
                )}
 
-               {/* Tabs for Quota and Specialization Counts */}
+               {/* Sorting Controls */}
+               <div className="flex justify-end mb-4">
+                 <div className="flex items-center gap-2">
+                   <span className="text-sm text-gray-600">{t("sortByCount")}:</span>
+                   <Button
+                     variant={sortOrder === 'count' ? 'default' : 'outline'}
+                     size="sm"
+                     onClick={() => setSortOrder('count')}
+                   >
+                     {t("sortByCount")}
+                   </Button>
+                   <Button
+                     variant={sortOrder === 'name' ? 'default' : 'outline'}
+                     size="sm"
+                     onClick={() => setSortOrder('name')}
+                   >
+                     {t("sortByName")}
+                   </Button>
+                 </div>
+               </div>
+
+               {/* Tabs for Quota, Specialization, and Notes Counts */}
                <Tabs defaultValue="quotas" className="w-full">
-                 <TabsList className="grid w-full grid-cols-2">
+                 <TabsList className="grid w-full grid-cols-3">
                    <TabsTrigger value="quotas" className="flex items-center gap-2">
                      <Users className="w-4 h-4" />
                      {t("quotaCategories")}
@@ -234,6 +280,10 @@ export default function UploadPage() {
                    <TabsTrigger value="specializations" className="flex items-center gap-2">
                      <GraduationCap className="w-4 h-4" />
                      {t("specializations")}
+                   </TabsTrigger>
+                   <TabsTrigger value="notes" className="flex items-center gap-2">
+                     <FileText className="w-4 h-4" />
+                     {t("notes")}
                    </TabsTrigger>
                  </TabsList>
                  
@@ -248,7 +298,7 @@ export default function UploadPage() {
                            </TableRow>
                          </TableHeader>
                          <TableBody>
-                           {Object.entries(reportData.quota_counts).map(([quota, count]) => (
+                           {sortEntries(Object.entries(reportData.quota_counts)).map(([quota, count]) => (
                              <TableRow key={String(quota)}>
                                <TableCell className="font-medium">{String(quota)}</TableCell>
                                <TableCell className="text-right">{Number(count)}</TableCell>
@@ -275,7 +325,7 @@ export default function UploadPage() {
                            </TableRow>
                          </TableHeader>
                          <TableBody>
-                           {Object.entries(reportData.specialization_counts).map(([spec, count]) => (
+                           {sortEntries(Object.entries(reportData.specialization_counts)).map(([spec, count]) => (
                              <TableRow key={String(spec)}>
                                <TableCell className="font-medium">{String(spec)}</TableCell>
                                <TableCell className="text-right">{Number(count)}</TableCell>
@@ -287,6 +337,33 @@ export default function UploadPage() {
                    ) : (
                      <div className="text-center py-8 text-gray-500">
                        {t("noSpecializationData")}
+                     </div>
+                   )}
+                 </TabsContent>
+
+                 <TabsContent value="notes" className="mt-4">
+                   {Object.keys(reportData.notes_counts).length > 0 ? (
+                     <div className="overflow-x-auto">
+                       <Table>
+                         <TableHeader>
+                           <TableRow>
+                             <TableHead>{t("noteCategory")}</TableHead>
+                             <TableHead className="text-right">{t("count")}</TableHead>
+                           </TableRow>
+                         </TableHeader>
+                         <TableBody>
+                           {sortEntries(Object.entries(reportData.notes_counts)).map(([note, count]) => (
+                             <TableRow key={String(note)}>
+                               <TableCell className="font-medium">{String(note)}</TableCell>
+                               <TableCell className="text-right">{Number(count)}</TableCell>
+                             </TableRow>
+                           ))}
+                         </TableBody>
+                       </Table>
+                     </div>
+                   ) : (
+                     <div className="text-center py-8 text-gray-500">
+                       {t("noNotesData")}
                      </div>
                    )}
                  </TabsContent>
