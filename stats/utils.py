@@ -22,8 +22,16 @@ def parse_nct_blocks_correct_header(file_path):
             while j < len(rows):
                 header_row = rows[j]
                 if header_row and "Код группы ОП" in [str(c).strip() if c else "" for c in header_row]:
-                    categories = [c for c in header_row]
-                    j += 1
+                    # Now, look for the next non-empty row (the ab-categories row)
+                    k = j + 1
+                    while k < len(rows) and not any(rows[k]):
+                        k += 1
+                    if k < len(rows):
+                        categories = [c for c in rows[k]]
+                        j = k + 1
+                    else:
+                        categories = [c for c in header_row]
+                        j += 1
                     break
                 j += 1
             # Now j is at the first data row
@@ -61,25 +69,27 @@ def generate_custom_report(blocks):
         cats = block['categories']
         # Find all indices for each ab-category
         ab_indices = {cat: [i for i, c in enumerate(cats) if c == cat] for cat in ab_categories}
-        try:
-            group_code_idx = cats.index("Код группы ОП")
-        except ValueError:
-            group_code_idx = None
         for row in block['data']:
             for cat, indices in ab_indices.items():
                 for idx in indices:
                     if idx < len(row) and row[idx] and str(row[idx]).strip() == "+":
                         ab_counts[cat] += 1
-            if group_code_idx is not None and group_code_idx < len(row):
-                group_val = row[group_code_idx]
-                if isinstance(group_val, str) and " - " in group_val:
-                    first_line = group_val.split('\n')[0].strip()
-                    if " - " in first_line:
-                        spec, univ = first_line.split(" - ")
-                        spec = spec.strip()
-                        univ = univ.strip()
-                        if univ == "421":  # KBTU
-                            specialization_counts[spec] = specialization_counts.get(spec, 0) + 1
+            # Look for specialization data in the row - it seems to be in a specific column
+            # Based on the sample data, it appears to be around index 30-31
+            for idx, cell in enumerate(row):
+                if isinstance(cell, str) and " - " in cell and "\n" in cell:
+                    # This looks like specialization data
+                    lines = cell.split('\n')
+                    for line in lines:
+                        line = line.strip()
+                        if " - " in line:
+                            spec, univ = line.split(" - ")
+                            spec = spec.strip()
+                            univ = univ.strip()
+                            if univ == "421":  # KBTU
+                                specialization_counts[spec] = specialization_counts.get(spec, 0) + 1
+                            break  # Only count the first choice
+                    break  # Only process the first specialization cell found
     return {
         "ab_counts": ab_counts,
         "specialization_counts": specialization_counts
