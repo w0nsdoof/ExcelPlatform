@@ -33,7 +33,7 @@ INSTALLED_APPS = [
     'rest_framework',
     'rest_framework_simplejwt',
     'drf_spectacular',
-    'drf_spectacular_sidecar',  # для статики Swagger UI
+    # 'drf_spectacular_sidecar',  # для статики Swagger UI
     'corsheaders',
 ]
 

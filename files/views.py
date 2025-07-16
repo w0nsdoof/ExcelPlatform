@@ -9,10 +9,42 @@ from .models import UserFile
 from .utils import process_userfile_and_save_report
 from rest_framework import viewsets, permissions
 from .serializers import UserFileSerializer
+from drf_spectacular.utils import extend_schema, OpenApiParameter, OpenApiExample
+from drf_spectacular.types import OpenApiTypes
 
 class UserFileViewSet(viewsets.ModelViewSet):
     serializer_class = UserFileSerializer
     permission_classes = [permissions.IsAuthenticated]
+
+    @extend_schema(
+        operation_id='create_user_file',
+        summary='Create a new file upload',
+        description='Upload a new file for processing',
+        request={
+            'multipart/form-data': {
+                'type': 'object',
+                'properties': {
+                    'file': {
+                        'type': 'string',
+                        'format': 'binary',
+                        'description': 'Excel file to upload'
+                    }
+                },
+                'required': ['file']
+            }
+        },
+        responses={
+            201: UserFileSerializer,
+            400: {
+                'type': 'object',
+                'properties': {
+                    'error': {'type': 'string'}
+                }
+            }
+        }
+    )
+    def create(self, request, *args, **kwargs):
+        return super().create(request, *args, **kwargs)
 
     def get_queryset(self):
         user = self.request.user
