@@ -6,6 +6,7 @@ import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Dialog,
   DialogContent,
@@ -16,10 +17,21 @@ import { useLanguage } from "@/contexts/language-context"
 import { LanguageSwitcher } from "@/components/language-switcher"
 import { fetchFiles, deleteFile, type FileItem } from "@/lib/api"
 import { formatFileSize, formatDate } from "@/lib/utils"
-import { ArrowLeft, Download, FileText, Loader2, Trash2 } from "lucide-react"
+import { ArrowLeft, Download, FileText, Loader2, Trash2, Users, GraduationCap } from "lucide-react"
 import { ProtectedRoute } from "@/components/protected-route"
 import { UserMenu } from "@/components/user-menu"
 import { useAuth } from "@/contexts/auth-context"
+
+interface ReportData {
+  quota_counts: Record<string, number>
+  specialization_counts: Record<string, number>
+  metadata?: {
+    total_rows_processed: number
+    rows_with_quotas: number
+    rows_with_specializations: number
+    processing_duration_seconds: number
+  }
+}
 
 export default function FilesPage() {
   const { t, language } = useLanguage()
@@ -27,7 +39,7 @@ export default function FilesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
-  const [reportData, setReportData] = useState<Record<string, number> | null>(null)
+  const [reportData, setReportData] = useState<ReportData | null>(null)
   const [isReportModalOpen, setIsReportModalOpen] = useState(false)
   const [loadingReport, setLoadingReport] = useState(false)
 
@@ -91,8 +103,34 @@ export default function FilesPage() {
       const response = await fetch(reportUrl)
       if (response.ok) {
         const data = await response.json()
-        if (data && data.specialization_counts) {
-          setReportData(data.specialization_counts)
+        console.log('Report data:', data) // Debug log
+        
+        if (data && (data.quota_counts || data.specialization_counts)) {
+          // Ensure quota_counts is a flat object with string keys and number values
+          const quotaCounts: Record<string, number> = {}
+          if (data.quota_counts && typeof data.quota_counts === 'object') {
+            Object.entries(data.quota_counts).forEach(([key, value]) => {
+              if (typeof key === 'string' && typeof value === 'number') {
+                quotaCounts[key] = value
+              }
+            })
+          }
+          
+          // Ensure specialization_counts is a flat object with string keys and number values
+          const specializationCounts: Record<string, number> = {}
+          if (data.specialization_counts && typeof data.specialization_counts === 'object') {
+            Object.entries(data.specialization_counts).forEach(([key, value]) => {
+              if (typeof key === 'string' && typeof value === 'number') {
+                specializationCounts[key] = value
+              }
+            })
+          }
+          
+          setReportData({
+            quota_counts: quotaCounts,
+            specialization_counts: specializationCounts,
+            metadata: data.metadata
+          })
         } else {
           setReportData(null)
         }
@@ -100,6 +138,7 @@ export default function FilesPage() {
         setReportData(null)
       }
     } catch (error) {
+      console.error('Error fetching report:', error)
       setReportData(null)
     } finally {
       setLoadingReport(false)
@@ -248,7 +287,7 @@ export default function FilesPage() {
         </div>
 
         <Dialog open={isReportModalOpen} onOpenChange={setIsReportModalOpen}>
-          <DialogContent>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>{t("viewReport")}</DialogTitle>
             </DialogHeader>
@@ -258,23 +297,99 @@ export default function FilesPage() {
                 <span>{t("loading")}</span>
               </div>
             ) : reportData ? (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Specialization</TableHead>
-                      <TableHead className="text-right">Count</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {Object.entries(reportData).map(([spec, count]) => (
-                      <TableRow key={spec}>
-                        <TableCell>{spec}</TableCell>
-                        <TableCell className="text-right">{count}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+              <div className="space-y-6">
+                {/* Metadata Summary */}
+                {reportData.metadata && (
+                  <div className="bg-gray-50 p-4 rounded-lg">
+                    <h3 className="font-semibold mb-2">{t("processingSummary")}</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-gray-600">{t("totalRows")}:</span>
+                        <div className="font-medium">{reportData.metadata.total_rows_processed}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">{t("withQuotas")}:</span>
+                        <div className="font-medium">{reportData.metadata.rows_with_quotas}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">{t("withSpecializations")}:</span>
+                        <div className="font-medium">{reportData.metadata.rows_with_specializations}</div>
+                      </div>
+                      <div>
+                        <span className="text-gray-600">{t("processingTime")}:</span>
+                        <div className="font-medium">{reportData.metadata.processing_duration_seconds.toFixed(3)}s</div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabs for Quota and Specialization Counts */}
+                <Tabs defaultValue="quotas" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="quotas" className="flex items-center gap-2">
+                      <Users className="w-4 h-4" />
+                      {t("quotaCategories")}
+                    </TabsTrigger>
+                    <TabsTrigger value="specializations" className="flex items-center gap-2">
+                      <GraduationCap className="w-4 h-4" />
+                      {t("specializations")}
+                    </TabsTrigger>
+                  </TabsList>
+                  
+                  <TabsContent value="quotas" className="mt-4">
+                    {Object.keys(reportData.quota_counts).length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{t("quotaCategory")}</TableHead>
+                              <TableHead className="text-right">{t("count")}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                                                       {Object.entries(reportData.quota_counts).map(([quota, count]) => (
+                             <TableRow key={String(quota)}>
+                               <TableCell className="font-medium">{String(quota)}</TableCell>
+                               <TableCell className="text-right">{Number(count)}</TableCell>
+                             </TableRow>
+                           ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        {t("noQuotaData")}
+                      </div>
+                    )}
+                  </TabsContent>
+                  
+                  <TabsContent value="specializations" className="mt-4">
+                    {Object.keys(reportData.specialization_counts).length > 0 ? (
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>{t("specialization")}</TableHead>
+                              <TableHead className="text-right">{t("count")}</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                                                       {Object.entries(reportData.specialization_counts).map(([spec, count]) => (
+                             <TableRow key={String(spec)}>
+                               <TableCell className="font-medium">{String(spec)}</TableCell>
+                               <TableCell className="text-right">{Number(count)}</TableCell>
+                             </TableRow>
+                           ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        {t("noSpecializationData")}
+                      </div>
+                    )}
+                  </TabsContent>
+                </Tabs>
               </div>
             ) : (
               <div className="text-center py-8">
