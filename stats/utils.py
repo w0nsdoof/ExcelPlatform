@@ -6,6 +6,87 @@ from django.core.files.base import ContentFile
 from datetime import datetime, timedelta
 import hashlib
 
+class FileHashProcessor:
+    def __init__(self, time_window_hours=24, max_file_hashes=1000):
+        """
+        Initialize the file hash processor to prevent duplicate file processing.
+        
+        Args:
+            time_window_hours (int): Hours to keep file hashes in memory (default: 24)
+            max_file_hashes (int): Maximum number of file hashes to store (default: 1000)
+        """
+        self.time_window = timedelta(hours=time_window_hours)
+        self.max_file_hashes = max_file_hashes
+        self.file_hashes = {}  # file_hash -> timestamp
+        self.last_cleanup = datetime.now()
+    
+    def create_file_hash(self, file_path):
+        """Create hash of the entire file content."""
+        try:
+            with open(file_path, 'rb') as f:
+                file_content = f.read()
+                return hashlib.md5(file_content).hexdigest()
+        except Exception:
+            # Fallback: hash file path and modification time
+            stat = os.stat(file_path)
+            file_info = f"{file_path}{stat.st_mtime}{stat.st_size}"
+            return hashlib.md5(file_info.encode('utf-8')).hexdigest()
+    
+    def is_file_recent(self, file_hash):
+        """Check if file was processed recently within time window."""
+        if file_hash not in self.file_hashes:
+            return False
+        
+        last_seen = self.file_hashes[file_hash]
+        time_diff = datetime.now() - last_seen
+        return time_diff <= self.time_window
+    
+    def add_file_hash(self, file_hash):
+        """Add file hash with current timestamp."""
+        current_time = datetime.now()
+        
+        # Check memory limit
+        if len(self.file_hashes) >= self.max_file_hashes:
+            self.cleanup_old_hashes()
+            
+            # If still at limit after cleanup, remove oldest entry
+            if len(self.file_hashes) >= self.max_file_hashes:
+                oldest_hash = min(self.file_hashes.keys(), 
+                                key=lambda h: self.file_hashes[h])
+                del self.file_hashes[oldest_hash]
+        
+        self.file_hashes[file_hash] = current_time
+    
+    def cleanup_old_hashes(self):
+        """Remove file hashes older than time window."""
+        current_time = datetime.now()
+        cutoff_time = current_time - self.time_window
+        
+        # Remove old hashes
+        old_hashes = [
+            h for h, t in self.file_hashes.items() 
+            if t < cutoff_time
+        ]
+        for h in old_hashes:
+            del self.file_hashes[h]
+        
+        self.last_cleanup = current_time
+    
+    def reset(self):
+        """Reset the file hash processor - clear all stored hashes."""
+        self.file_hashes.clear()
+        self.last_cleanup = datetime.now()
+    
+    def get_stats(self):
+        """Get current statistics."""
+        return {
+            "total_file_hashes": len(self.file_hashes),
+            "max_file_hashes": self.max_file_hashes,
+            "time_window_hours": self.time_window.total_seconds() / 3600,
+            "last_cleanup": self.last_cleanup.isoformat(),
+            "memory_usage_mb": len(self.file_hashes) * 0.0001  # Rough estimate
+        }
+
 class TimeHashProcessor:
     def __init__(self, time_window_hours=3, max_hashes=10000):
         """
@@ -84,6 +165,11 @@ class TimeHashProcessor:
         
         self.last_cleanup = current_time
     
+    def reset(self):
+        """Reset the hash processor - clear all stored hashes."""
+        self.hash_timestamps.clear()
+        self.last_cleanup = datetime.now()
+
     def get_stats(self):
         """Get current statistics."""
         return {
@@ -94,8 +180,13 @@ class TimeHashProcessor:
             "memory_usage_mb": len(self.hash_timestamps) * 0.0001  # Rough estimate
         }
 
-# Global processor instance
+# Global processor instances
+file_hash_processor = FileHashProcessor(time_window_hours=24, max_file_hashes=1000)
 hash_processor = TimeHashProcessor(time_window_hours=3, max_hashes=10000)
+
+def reset_file_hash_processor():
+    """Reset the file hash processor for testing purposes."""
+    file_hash_processor.reset()
 
 def is_xlsx_file(file_path):
     return file_path.lower().endswith('.xlsx')
@@ -179,7 +270,8 @@ def generate_custom_report(blocks):
             "duplicate_rows_skipped": 0,
             "unique_rows_processed": 0,
             "hash_processor_stats": None
-        }
+        },
+        "file_hash_stats": None
     }
     
     for block in blocks:
@@ -260,6 +352,9 @@ def generate_custom_report(blocks):
     # Add hash processor stats
     metadata["deduplication_stats"]["hash_processor_stats"] = hash_processor.get_stats()
     
+    # Add file hash processor stats
+    metadata["file_hash_stats"] = file_hash_processor.get_stats()
+    
     return {
         "quota_counts": quota_counts,
         "specialization_counts": specialization_counts,
@@ -271,7 +366,14 @@ def process_excel_file(file_path):
         return None, "Not an Excel file"
     if not is_nct_excel(file_path):
         return None, "File does not match expected NCT pattern"
+    
+    # Process the file
     blocks = parse_nct_blocks_correct_header(file_path)
     report = generate_custom_report(blocks)
+    
+    # Add file hash to processor AFTER successful processing
+    file_hash = file_hash_processor.create_file_hash(file_path)
+    file_hash_processor.add_file_hash(file_hash)
+    
     return report, None
 
