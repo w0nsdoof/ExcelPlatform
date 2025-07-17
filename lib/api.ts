@@ -7,6 +7,39 @@ export interface FileItem {
   report_url?: string | null
 }
 
+export interface SummaryData {
+  summary: {
+    total_files: number
+    total_quota_counts: Record<string, number | Record<string, number>>
+    total_specialization_counts: Record<string, number>
+    processing_stats: {
+      average_processing_time_seconds: number
+      total_processing_time_seconds: number
+      files_with_processing_data: number
+    }
+    file_upload_timeline: Array<{
+      file_id: number
+      file_name: string
+      uploaded_at: string
+      quota_count: number
+      specialization_count: number
+    }>
+    most_active_days: Array<{
+      date: string
+      uploads: number
+    }>
+  }
+  metadata: {
+    generated_at: string
+    time_range_days: number
+    files_included: number
+    date_range: {
+      start: string
+      end: string
+    }
+  }
+}
+
 const getApiHost = () => {
   return process.env.NEXT_PUBLIC_API_HOST || "http://127.0.0.1:8000"
 }
@@ -189,6 +222,43 @@ export async function getFileInfo(
 
   const response = await makeAuthenticatedRequest(
     `${host}/api/files/${fileId}/`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    },
+    accessToken,
+    refreshAccessToken
+  )
+
+  if (!response.ok) {
+    throw new Error(`HTTP error! status: ${response.status}`)
+  }
+
+  return response.json()
+}
+
+export async function fetchSummary(
+  accessToken: string,
+  refreshAccessToken: () => Promise<void>,
+  days?: number,
+  userOnly?: boolean
+): Promise<SummaryData> {
+  const host = getApiHost()
+  
+  const params = new URLSearchParams()
+  if (days !== undefined) {
+    params.append('days', days.toString())
+  }
+  if (userOnly !== undefined) {
+    params.append('user_only', userOnly.toString())
+  }
+  
+  const url = `${host}/api/files/summary/${params.toString() ? `?${params.toString()}` : ''}`
+
+  const response = await makeAuthenticatedRequest(
+    url,
     {
       method: "GET",
       headers: {
